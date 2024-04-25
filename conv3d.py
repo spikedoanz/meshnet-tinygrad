@@ -28,12 +28,12 @@ def test_conv3d(input_shape, weight_shape, stride, padding, dilation, groups):
     output_tinygrad = conv3d(input_tensor_tinygrad, weight_tensor_tinygrad, bias_tensor_tinygrad, groups, stride, dilation, padding)
 
     print("PyTorch output:")
-    print(output_torch)
+    print(output_torch.numpy())
     print(f"Output shape (PyTorch): {output_torch.shape}")
     print()
 
     print("tinygrad output:")
-    print(output_tinygrad.data)
+    print(output_tinygrad.numpy())
     print(f"Output shape (tinygrad): {output_tinygrad.shape}")
     print()
 
