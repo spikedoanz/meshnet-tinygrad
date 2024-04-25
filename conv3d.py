@@ -52,20 +52,22 @@ def test_conv3d(input_shape, weight_shape, stride, padding, dilation, groups):
         print("PyTorch and tinygrad outputs are NOT equal!")
     print()
 
+
 def conv3d(x: Tensor, w: Tensor, b: Optional[Tensor] = None, groups: int = 1, stride: int = 1, dilation: int = 1, padding: int = 0) -> Tensor:
     assert groups == 1, "Grouped conv not supported"
     padding = [padding] * 6 if isinstance(padding, int) else padding
+    dilation = [dilation] * 3 if isinstance(dilation, int) else dilation
     x = pad3d(x, padding)
     
     bs, cin, _, _, _ = x.shape
     cout, _, kd, kh, kw = w.shape
-    ys = tuple([(x.shape[i+2] - w.shape[i+2]) // stride + 1 for i in range(3)])
+    ys = tuple([(x.shape[i+2] - (w.shape[i+2] - 1) * dilation[i] - 1) // stride + 1 for i in range(3)])
     
     y = Tensor.zeros((bs, cout, *ys))
     for i in range(ys[0]):
         for j in range(ys[1]):
             for k in range(ys[2]):
-                x_window = x[:, :, i*stride:i*stride+kd, j*stride:j*stride+kh, k*stride:k*stride+kw]
+                x_window = x[:, :, i*stride:i*stride+(kd-1)*dilation[0]+1:dilation[0], j*stride:j*stride+(kh-1)*dilation[1]+1:dilation[1], k*stride:k*stride+(kw-1)*dilation[2]+1:dilation[2]]
                 y[:, :, i, j, k] = (x_window.reshape(bs, cin, -1) * w.reshape(cout, cin, -1)).sum(-1)
     
     if b is not None:
@@ -96,7 +98,7 @@ def pad3d(x: Tensor, padding: Union[int, Tuple[int, int, int, int, int, int]]) -
 
     return padded_tensor
 
-testn = 1
+testn = 4
 # Test case 1: Basic convolution
 if testn > 0:
     test_conv3d(
