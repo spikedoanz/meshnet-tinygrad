@@ -23,7 +23,18 @@ class BatchNorm3d:
     bn_init = (x - self.running_mean.reshape(1, -1, 1, 1, 1).expand(x.shape)) * batch_invstd
     return self.weight.reshape(1, -1, 1, 1, 1).expand(x.shape) * bn_init + self.bias.reshape(1, -1, 1, 1, 1).expand(x.shape)
 
+
 # from https://github.com/neuroneural/brainchop/blob/master/py2tfjs/meshnet.py
+""" Torch spec:
+    def conv_w_bn_before_act(dropout_p=0, *args, **kwargs):
+    "Configurable Conv block with Batchnorm and Dropout"
+    return nn.Sequential(
+        nn.Conv3d(*args, **kwargs),
+        nn.BatchNorm3d(kwargs["out_channels"]),
+        nn.ReLU(inplace=True),
+        nn.Dropout3d(dropout_p),
+    )
+"""
 class ConvBNReLU(tnn.Module):
     def __init__(self, dropout_p=0, *args, **kwargs):
         super(ConvBNReLU, self).__init__()
@@ -50,19 +61,28 @@ class ConvBNReLU(tnn.Module):
 
     def forward(self, x):
         x = self.conv(x)
-        #x = self.bn(x)
-        #x = self.relu(x)
-        #x = self.dropout(x)
+        # x = self.bn(x)
+        # x = self.relu(x)
+        # x = self.dropout(x)
         return x
 
 class ConvBNReLU_TG:
     def __init__(self, dropout_p=0, *args, **kwargs):
         c0 = kwargs["in_channels"]
         c1 = kwargs["out_channels"]
-        stride = kwargs.get("stride", 1)
+        stride = kwargs["stride"]
         kernel_size = (kwargs["kernel_size"],) * 3
-        dilation = (kwargs.get("dilation", 1),) * 3
-        padding = (kwargs["padding"],) * 6
+        # dilation = (kwargs.get("dilation", 1),) * 3
+        # padding = (kwargs["padding"],) * 3
+        dilation = kwargs["dilation"]
+        padding = kwargs["padding"]
+
+        print(c0)
+        print(c1)
+        print(stride)
+        print(kernel_size)
+        print(padding)
+
 
         self.conv = nn.Conv2d(c0, c1,
                               stride=stride,
@@ -96,7 +116,7 @@ class ConvBNReLU_TG:
 
 def test_conv_w_bn_before_act(input_shape, conv_kwargs, dropout_p=0):
     # Create numpy arrays for input
-    input_np = np.random.randn(*input_shape)
+    input_np = np.random.randn(*input_shape).astype('float32')
     
     # Convert numpy array to PyTorch tensor
     input_tensor_torch = torch.from_numpy(input_np).float()
@@ -111,7 +131,7 @@ def test_conv_w_bn_before_act(input_shape, conv_kwargs, dropout_p=0):
     
     # tinygrad
     # Create an instance of ConvBNReLU_TG
-    conv_bn_relu_tg = ConvBNReLU_TG(dropout_p=0.1, **conv_kwargs)
+    conv_bn_relu_tg = ConvBNReLU_TG(dropout_p=dropout_p, **conv_kwargs)
 
     # Load the weights from .npy files
     conv_bn_relu_tg.load_weights("conv_weights.npy", "bn_weights.npy", "bn_bias.npy")

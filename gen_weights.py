@@ -19,12 +19,12 @@ conv_weights_shape = (
     conv_kwargs["kernel_size"],
     conv_kwargs["kernel_size"]
 )
-conv_weights = np.random.randn(*conv_weights_shape)
+conv_weights = np.random.randn(*conv_weights_shape).astype('float32')
 
 # Generate fake weights and biases for the batch normalization layer
 bn_weights_shape = (conv_kwargs["out_channels"],)
-bn_weights = np.random.randn(*bn_weights_shape)
-bn_bias = np.random.randn(*bn_weights_shape)
+bn_weights = np.random.randn(*bn_weights_shape).astype('float32')
+bn_bias = np.random.randn(*bn_weights_shape).astype('float32')
 
 # Save the generated weights as .npy files
 np.save("conv_weights.npy", conv_weights)
