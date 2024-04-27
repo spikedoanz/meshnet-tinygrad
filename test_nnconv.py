@@ -10,64 +10,47 @@ class Conv3d_Torch(tnn.Module):
         super(Conv3d_Torch, self).__init__()
         self.conv = tnn.Conv3d(*args, **kwargs)
 
+    def load_weights(self, conv_weights_file):
+        conv_weights = np.load(conv_weights_file)
+        self.conv.weight.data = torch.from_numpy(conv_weights)
+
     def forward(self, x):
         x = self.conv(x)
         return x
 
 class Conv3d_TG:
     def __init__(self, *args, **kwargs):
-        c0 = kwargs["in_channels"]
-        c1 = kwargs["out_channels"]
-        stride = kwargs.get("stride", 1)
-        kernel_size = (kwargs["kernel_size"],) * 3
-        dilation = (kwargs.get("dilation", 1),) * 3
-        padding = (kwargs["padding"],) * 6
-
-        self.conv = nn.Conv2d(c0, c1,
-                              stride=stride,
-                              kernel_size=kernel_size,
-                              padding=padding,
-                              dilation=dilation,
-                              bias=kwargs.get("bias", True))
+        self.weight = None 
+        self.bias = None
+        self.stride = kwargs["stride"]
+        self.dilation = kwargs["dilation"]
+        self.padding = kwargs["padding"]
 
     def load_weights(self, conv_weights_file):
-        # Load weights from .npy file
-        conv_weights = np.load(conv_weights_file)
-
-        # Cast the loaded weights to float32
-        conv_weights = conv_weights.astype(np.float32)
-
-        # Assign loaded weights to the layer
-        self.conv.weight = Tensor(conv_weights)
+        self.weights = Tensor(np.load(conv_weights_file))
 
     def __call__(self, x):
-        x = self.conv(x)
-        return x
+        assert self.weights, "Weights not initialized"
+        return x.conv2d(self.weights,
+                        stride = self.stride,
+                        dilation = self.dilation,
+                        padding = self.padding)
+
 
 def test_conv3d(input_shape, conv_kwargs):
     # Create numpy array for input
     input_np = np.random.randn(*input_shape).astype('float32')
 
     # Convert numpy array to PyTorch tensor
-    input_tensor_torch = torch.from_numpy(input_np).float()
-
-    # Create the Conv3d layer in PyTorch
+    input_tensor_torch = torch.from_numpy(input_np)
     conv_layer_torch = Conv3d_Torch(**conv_kwargs)
-
-    # Compute the output using PyTorch
+    conv_layer_torch.load_weights("conv_weights.npy")
     output_torch = conv_layer_torch(input_tensor_torch)
 
     # TinyGrad
-    # Create an instance of Conv3d_TG
-    conv_layer_tg = Conv3d_TG(**conv_kwargs)
-
-    # Load the weights from .npy file
-    conv_layer_tg.load_weights("conv_weights.npy")
-
-    # Convert the input numpy array to a TinyGrad tensor
     input_tensor_tg = Tensor(input_np)
-
-    # Compute the output using TinyGrad
+    conv_layer_tg = Conv3d_TG(**conv_kwargs)
+    conv_layer_tg.load_weights("conv_weights.npy")
     output_tg = conv_layer_tg(input_tensor_tg)
 
     print(f"Input shape: {input_shape}")
@@ -105,8 +88,8 @@ conv_kwargs = {
     "kernel_size": 3,
     "padding": 1,
     "stride": 1,
-    "dilation": 1,
-    "bias": True,
+    "dilation": 2,
+    "bias": False,
 }
 
 test_conv3d(input_shape, conv_kwargs)
