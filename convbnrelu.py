@@ -7,21 +7,22 @@ from tinygrad import Tensor
 from tinygrad import nn
 
 # from https://github.com/tinygrad/tinygrad/issues/1318
-class BatchNorm3d:
-  def __init__(self, sz, eps=1e-5, affine=True, track_running_stats=True, momentum=0.1):
-    self.eps, self.track_running_stats, self.momentum = eps, track_running_stats, momentum
+class Conv3d_TG:
+    def __init__(self, *args, **kwargs):
+        self.weight = None 
+        self.stride = kwargs["stride"]
+        self.dilation = kwargs["dilation"]
+        self.padding = kwargs["padding"]
 
-    if affine: self.weight, self.bias = Tensor.ones(sz), Tensor.zeros(sz)
-    else: self.weight, self.bias = None, None
+    def load_weights(self, conv_weights_file):
+        self.weights = Tensor(np.load(conv_weights_file))
 
-    self.running_mean, self.running_var = Tensor.zeros(sz, requires_grad=False), Tensor.ones(sz, requires_grad=False)
-    self.num_batches_tracked = Tensor.zeros(1, requires_grad=False)
-
-  def __call__(self, x:Tensor):
-    # NOTE: this can be precomputed for static inference. we expand it here so it fuses
-    batch_invstd = self.running_var.reshape(1, -1, 1, 1, 1).expand(x.shape).add(self.eps).rsqrt()
-    bn_init = (x - self.running_mean.reshape(1, -1, 1, 1, 1).expand(x.shape)) * batch_invstd
-    return self.weight.reshape(1, -1, 1, 1, 1).expand(x.shape) * bn_init + self.bias.reshape(1, -1, 1, 1, 1).expand(x.shape)
+    def __call__(self, x):
+        assert self.weights, "Weights not initialized"
+        return x.conv2d(self.weights,
+                        stride = self.stride,
+                        dilation = self.dilation,
+                        padding = self.padding,)
 
 
 # from https://github.com/neuroneural/brainchop/blob/master/py2tfjs/meshnet.py
@@ -35,83 +36,57 @@ class BatchNorm3d:
         nn.Dropout3d(dropout_p),
     )
 """
+
 class ConvBNReLU(tnn.Module):
     def __init__(self, dropout_p=0, *args, **kwargs):
         super(ConvBNReLU, self).__init__()
-        self.conv = tnn.Conv3d(*args, **kwargs)
+        self.conv = tnn.Conv3d(*args, **kwargs, bias=False)
         self.bn = tnn.BatchNorm3d(kwargs["out_channels"])
         self.relu = tnn.ReLU(inplace=True)
         self.dropout = tnn.Dropout3d(dropout_p)
 
     def load_weights(self, conv_weights_file, bn_weights_file, bn_bias_file):
-        # Load weights from .npy files
+        # Conv 
         conv_weights = np.load(conv_weights_file)
+        self.conv.weight.data = torch.from_numpy(conv_weights)
+
+
+        # Batchnorm
         bn_weights = np.load(bn_weights_file)
         bn_bias = np.load(bn_bias_file)
-
-        # Cast the loaded weights to float32
-        conv_weights = conv_weights.astype(np.float32)
-        bn_weights = bn_weights.astype(np.float32)
-        bn_bias = bn_bias.astype(np.float32)
-
-        # Assign loaded weights to the layers
-        self.conv.weight.data = torch.from_numpy(conv_weights)
         self.bn.weight.data = torch.from_numpy(bn_weights)
         self.bn.bias.data = torch.from_numpy(bn_bias)
 
     def forward(self, x):
         x = self.conv(x)
-        # x = self.bn(x)
-        # x = self.relu(x)
-        # x = self.dropout(x)
+        x = self.bn(x)
+        x = self.relu(x)
+        #x = self.dropout(x)
         return x
+
 
 class ConvBNReLU_TG:
     def __init__(self, dropout_p=0, *args, **kwargs):
-        c0 = kwargs["in_channels"]
-        c1 = kwargs["out_channels"]
-        stride = kwargs["stride"]
-        kernel_size = (kwargs["kernel_size"],) * 3
-        # dilation = (kwargs.get("dilation", 1),) * 3
-        # padding = (kwargs["padding"],) * 3
-        dilation = kwargs["dilation"]
-        padding = kwargs["padding"]
-
-        print(c0)
-        print(c1)
-        print(stride)
-        print(kernel_size)
-        print(padding)
-
-
-        self.conv = nn.Conv2d(c0, c1,
-                              stride=stride,
-                              kernel_size=kernel_size,
-                              padding=padding,
-                              dilation=dilation,
-                              bias=False)
-        self.batchnorm = BatchNorm3d(c1)
-        self.relu = Tensor.relu
+        self.conv = Conv3d_TG(**kwargs)
+        self.batchnorm = nn.InstanceNorm(kwargs["out_channels"],affine=True)
         self.dropout_p = dropout_p
 
     def load_weights(self, conv_weights_file, bn_weights_file, bn_bias_file):
-        # Load weights from .npy files
-        conv_weights = np.load(conv_weights_file)
+        # Conv 
+        self.conv.load_weights(conv_weights_file)
 
+        # Batchnorm
         bn_weights = np.load(bn_weights_file)
         bn_bias = np.load(bn_bias_file)
-
-        # Assign loaded weights to the layers
-        self.conv.weight = Tensor(conv_weights)
 
         self.batchnorm.weight = Tensor(bn_weights)
         self.batchnorm.bias = Tensor(bn_bias)
 
     def __call__(self, x):
         x = self.conv(x)
-        # x = self.batchnorm(x)
-        # x = x.relu()
-        # x = x.dropout(self.dropout_p)
+        x = self.batchnorm(x)
+        x = x.relu()
+        #x = x.dropout(self.dropout_p)
         return x
 
 def test_conv_w_bn_before_act(input_shape, conv_kwargs, dropout_p=0):
@@ -119,27 +94,15 @@ def test_conv_w_bn_before_act(input_shape, conv_kwargs, dropout_p=0):
     input_np = np.random.randn(*input_shape).astype('float32')
     
     # Convert numpy array to PyTorch tensor
-    input_tensor_torch = torch.from_numpy(input_np).float()
-    
-    # Create the conv_w_bn_before_act layer in PyTorch
+    input_tensor_torch = torch.from_numpy(input_np)
     conv_layer_torch = ConvBNReLU(dropout_p, **conv_kwargs)
-
-    
     conv_layer_torch.load_weights("conv_weights.npy", "bn_weights.npy", "bn_bias.npy")
-    # Compute the output using PyTorch
     output_torch = conv_layer_torch(input_tensor_torch)
     
     # tinygrad
-    # Create an instance of ConvBNReLU_TG
-    conv_bn_relu_tg = ConvBNReLU_TG(dropout_p=dropout_p, **conv_kwargs)
-
-    # Load the weights from .npy files
-    conv_bn_relu_tg.load_weights("conv_weights.npy", "bn_weights.npy", "bn_bias.npy")
-
-    # Convert the input numpy array to a TinyGrad tensor
     input_tensor_tg = Tensor(input_np)
-
-    # Use the ConvBNReLU_TG block in your model
+    conv_bn_relu_tg = ConvBNReLU_TG(dropout_p=dropout_p, **conv_kwargs)
+    conv_bn_relu_tg.load_weights("conv_weights.npy", "bn_weights.npy", "bn_bias.npy")
     output_tg = conv_bn_relu_tg(input_tensor_tg)
 
 
