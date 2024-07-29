@@ -41,6 +41,7 @@ def calculate_same_padding(kernel_size, dilation):
 
 
 def tinygrad_model(model_spec, weights_data, x):
+    x = normalize(x)
     layers = []
     weight_index = 0
     in_channels = 1  # Start with 1 input channel
@@ -64,7 +65,7 @@ def tinygrad_model(model_spec, weights_data, x):
             weight_shape = [out_channels[0], in_channels[0], k,k,k]
             # putting the shape into tfjs order
             weight_shape = [weight_shape[i] for i in (2, 3, 4, 1, 0)]
-            bias_shape = [in_channels[0]]
+            bias_shape = [out_channels[0]]
 
             weight_size = np.prod(weight_shape)
             bias_size = np.prod(bias_shape)
@@ -93,7 +94,7 @@ def tinygrad_model(model_spec, weights_data, x):
             print(f"Bias shape: {bias.shape}")
             x = x.conv2d(
                 weight = weight_data,
-                bias = bias_data if i < len(spec) - 1 else None,
+                bias = bias_data, 
                 groups = 1,
                 stride = stride[0][0],
                 dilation = dilation[0][0],
@@ -106,26 +107,24 @@ def tinygrad_model(model_spec, weights_data, x):
             in_channels = out_channels[0]
 
         elif layer["class_name"] == "Activation":
-            layers.append(create_activation(layer["config"]["activation"]))
-            pass
-
+            activation = create_activation(layer["config"]["activation"])
+            x = activation(x)
     return x
 
 if __name__ == "__main__":
     json_path = "model.json"
     bin_path = "model.bin"
-    file_path = "input.nii.gz"
+    file_path = "t1_crop.nii.gz"
 
     img = load(file_path)
-    tensor = normalize(np.array(img.dataobj).reshape(1,1,256,256,256))
+    tensor = np.array(img.dataobj).reshape(1,1,256,256,256)
     t = Tensor(tensor.astype(np.float16))
     
     model_spec, weights_data = load_tfjs_model(json_path, bin_path)
 
-    out = tinygrad_model(model_spec, weights_data,t).numpy()
-    print(out.shape)
+    out = tinygrad_model(model_spec, weights_data,t).argmax(1).numpy()
     # Create a new NIfTI image with the output data
-    out_img = Nifti1Image(out[0][1], img.affine, img.header)
+    out_img = Nifti1Image(out[0], img.affine, img.header)
 
     # Save the new NIfTI image
     save(out_img, "output.nii.gz")
