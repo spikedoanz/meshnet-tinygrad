@@ -52,31 +52,25 @@ def create_pytorch_model(model_spec, weights_data):
     layers = []
     weight_index = 0
     in_channels = 1  # Start with 1 input channel
-
-    for layer in model_spec["modelTopology"]["model_config"]["config"][
-        "layers"
-    ][
-        1:
-    ]:  # Skip input layer
+    spec=model_spec["modelTopology"]["model_config"]["config"]["layers"][1:]
+    for layer in spec:  # Skip input layer
         if layer["class_name"] == "Conv3D":
             config = layer["config"]
             padding = calculate_same_padding(
                 config["kernel_size"], config["dilation_rate"]
             )
-            conv = nn.Conv3d(
-                in_channels=in_channels,
-                out_channels=config["filters"],
-                kernel_size=config["kernel_size"],
-                stride=config["strides"],
-                padding=padding,
-                dilation=config["dilation_rate"],
-            )
+
+            in_channels = in_channels,
+            out_channels = config["filters"],
+            kernel_size = config["kernel_size"],
+            stride = config["strides"],
+            padding = padding,
+            dilation = config["dilation_rate"],
 
             # Load weights and biases
-            weight_shape = conv.weight.shape
-            # putting the shape into tfjs order
-            weight_shape = [weight_shape[i] for i in (2, 3, 4, 1, 0)]
-            bias_shape = conv.bias.shape
+            k = kernel_size
+            weight_shape = (out_channels, in_channels, k,k,k)
+            bias_shape = (in_channels)
 
             weight_size = np.prod(weight_shape)
             bias_size = np.prod(bias_shape)
@@ -84,6 +78,7 @@ def create_pytorch_model(model_spec, weights_data):
             weight = weights_data[
                 weight_index : weight_index + weight_size
             ].reshape(weight_shape)
+            print(weight.shape)
             # restoring pytorch order
             weight = np.transpose(weight, (4, 3, 0, 1, 2))
             weight_index += weight_size
@@ -93,19 +88,30 @@ def create_pytorch_model(model_spec, weights_data):
             ].reshape(bias_shape)
             weight_index += bias_size
 
-            conv.weight.data = torch.from_numpy(weight.copy())
-            conv.bias.data = torch.from_numpy(bias.copy())
+            weights = Tensor(weight.copy())
+            bias = Tensor(bias.copy())
+            print(weights.shape)
+            print(bias.shape)
 
-            layers.append(conv)
+        #     conv = lambda x: x.conv2d(
+        #         in_channels=in_channels,
+        #         out_channels=config["filters"],
+        #         kernel_size=config["kernel_size"],
+        #         stride=config["strides"],
+        #         padding=padding,
+        #         dilation=config["dilation_rate"],
+        #     )
+        #
+        #     layers.append(conv)
+        #
+        #     # Update in_channels for the next layer
+        #     in_channels = config["filters"]
+        #
+        # elif layer["class_name"] == "Activation":
+        #     activation = create_activation(layer["config"]["activation"])
+        #     layers.append(activation)
 
-            # Update in_channels for the next layer
-            in_channels = config["filters"]
-
-        elif layer["class_name"] == "Activation":
-            activation = create_activation(layer["config"]["activation"])
-            layers.append(activation)
-
-    return model_sequential whatever 
+    # return model_sequential whatever 
 
 
 def tfjs_to_pytorch(json_path, bin_path):
