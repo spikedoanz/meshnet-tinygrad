@@ -2,10 +2,10 @@ import json
 import torch
 import torch.nn as nn
 import numpy as np
+from tinygrad import Tensor
 
 device_name = "cuda:0" if torch.cuda.is_available() else "cpu"
 device = torch.device(device_name)
-
 
 def normalize(img):
     """Unit interval preprocessing"""
