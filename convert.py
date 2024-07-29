@@ -114,19 +114,20 @@ def tinygrad_model(model_spec, weights_data, x):
 if __name__ == "__main__":
     json_path = "model.json"
     bin_path = "model.bin"
-    file_path = "t1_crop.nii.gz"
+    file_path = "input.nii.gz"
 
     img = load(file_path)
-    tensor = np.array(img.dataobj).reshape(1,1,256,256,256)
-    t = Tensor(tensor.astype(np.float16))  # Consider float32 or float64 for more precision
+    tensor = normalize(np.array(img.dataobj).reshape(1,1,256,256,256))
+    t = Tensor(tensor.astype(np.float16))
     
     model_spec, weights_data = load_tfjs_model(json_path, bin_path)
 
     out = tinygrad_model(model_spec, weights_data,t).numpy()
+    print(out.shape)
     # Create a new NIfTI image with the output data
-    out_img = Nifti1Image(out[0, 0], img.affine, img.header)
-    
+    out_img = Nifti1Image(out[0][1], img.affine, img.header)
+
     # Save the new NIfTI image
     save(out_img, "output.nii.gz")
-    
+
     print("Output saved as output.nii.gz")
