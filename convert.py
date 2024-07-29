@@ -1,31 +1,22 @@
 import json
-import torch
-import torch.nn as nn
 import numpy as np
 import inspect
 from tinygrad import Tensor 
-
-device_name = "cuda:0" if torch.cuda.is_available() else "cpu"
-device = torch.device(device_name)
-
+from nibabel import save, load, Nifti1Image
 
 def normalize(img):
     """Unit interval preprocessing"""
     img = (img - img.min()) / (img.max() - img.min())
     return img
 
-
 def load_tfjs_model(json_path, bin_path):
-    # Load JSON specification
     with open(json_path, "r") as f:
         model_spec = json.load(f)
 
-    # Load binary weights
     with open(bin_path, "rb") as f:
         weights_data = np.frombuffer(f.read(), dtype=np.float32)
 
     return model_spec, weights_data
-
 
 def create_activation(name):
     activation_map = {
@@ -49,12 +40,12 @@ def calculate_same_padding(kernel_size, dilation):
     return tuple(padding)
 
 
-def create_pytorch_model(model_spec, weights_data):
+def tinygrad_model(model_spec, weights_data, x):
     layers = []
     weight_index = 0
     in_channels = 1  # Start with 1 input channel
-    spec = model_spec["modelTopology"]["model_config"]["config"]["layers"][1:4]
-    for layer in spec: # skip input layer
+    spec = model_spec["modelTopology"]["model_config"]["config"]["layers"][1:]
+    for i, layer in enumerate(spec): # skip input layer
         if layer["class_name"] == "Conv3D":
             config = layer["config"]
             padding = calculate_same_padding(
@@ -81,7 +72,6 @@ def create_pytorch_model(model_spec, weights_data):
             weight = weights_data[
                 weight_index : weight_index + weight_size
             ].reshape(weight_shape)
-            # restoring pytorch order
             weight = np.transpose(weight, (4, 3, 0, 1, 2))
             weight_index += weight_size
 
@@ -92,22 +82,26 @@ def create_pytorch_model(model_spec, weights_data):
 
             weight_data = Tensor(weight.copy())
             bias_data = Tensor(bias.copy())
-            print(weight_data.shape)
-            print(bias_data.shape)
-            print(stride[0][0])
-            print(dilation[0][0])
-            print(padding[0][0])
+            # print(weight_data.shape)
+            # print(bias_data.shape)
+            # print(stride[0][0])
+            # print(dilation[0][0])
+            # print(padding[0][0])
 
-            conv = lambda x: x.conv2d(
+            print(f"Tensor shape: {x.shape}")
+            print(f"Kernel shape: {weight.shape}")
+            print(f"Bias shape: {bias.shape}")
+            x = x.conv2d(
                 weight = weight_data,
-                bias = bias_data,
+                bias = bias_data if i < len(spec) - 1 else None,
                 groups = 1,
                 stride = stride[0][0],
                 dilation = dilation[0][0],
                 padding = padding[0][0]
-            ) 
+            )
+            print(f"\t Result Tensor shape: {x.shape}")
 
-            layers.append(conv)
+            # layers.append(conv)
             # Update in_channels for the next layer
             in_channels = out_channels[0]
 
@@ -115,22 +109,24 @@ def create_pytorch_model(model_spec, weights_data):
             layers.append(create_activation(layer["config"]["activation"]))
             pass
 
-    return layers 
-
-def tfjs_to_pytorch(json_path, bin_path):
-    model_spec, weights_data = load_tfjs_model(json_path, bin_path)
-    pytorch_model = create_pytorch_model(model_spec, weights_data)
-    return pytorch_model
+    return x
 
 if __name__ == "__main__":
     json_path = "model.json"
     bin_path = "model.bin"
-    model = tfjs_to_pytorch(json_path, bin_path)
+    file_path = "t1_crop.nii.gz"
 
-    t = Tensor(np.random.randn(1, 1, 256, 256, 256).astype(np.float16))
-    print(f"Tensor shape: {t.shape}")
-    for layer in model:
-        t = layer(t)
-        print(f"Tensor shape: {t.shape}")
+    img = load(file_path)
+    tensor = np.array(img.dataobj).reshape(1,1,256,256,256)
+    t = Tensor(tensor.astype(np.float16))  # Consider float32 or float64 for more precision
+    
+    model_spec, weights_data = load_tfjs_model(json_path, bin_path)
 
-    t.realize()
+    out = tinygrad_model(model_spec, weights_data,t).numpy()
+    # Create a new NIfTI image with the output data
+    out_img = Nifti1Image(out[0, 0], img.affine, img.header)
+    
+    # Save the new NIfTI image
+    save(out_img, "output.nii.gz")
+    
+    print("Output saved as output.nii.gz")
