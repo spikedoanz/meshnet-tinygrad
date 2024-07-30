@@ -89,9 +89,9 @@ def tinygrad_model(model_spec, weights_data, x):
             # print(dilation[0][0])
             # print(padding[0][0])
 
-            print(f"Tensor shape: {x.shape}")
-            print(f"Kernel shape: {weight.shape}")
-            print(f"Bias shape: {bias.shape}")
+            # print(f"Tensor shape: {x.shape}")
+            # print(f"Kernel shape: {weight.shape}")
+            # print(f"Bias shape: {bias.shape}")
             x = x.conv2d(
                 weight = weight_data,
                 bias = bias_data, 
@@ -100,7 +100,7 @@ def tinygrad_model(model_spec, weights_data, x):
                 dilation = dilation[0][0],
                 padding = padding[0][0]
             )
-            print(f"\t Result Tensor shape: {x.shape}")
+            # print(f"\t Result Tensor shape: {x.shape}")
 
             # layers.append(conv)
             # Update in_channels for the next layer
